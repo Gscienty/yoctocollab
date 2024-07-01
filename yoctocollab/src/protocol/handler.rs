@@ -15,7 +15,7 @@ use super::{
     },
 };
 
-pub fn handle_message<CTX: Context>(ctx: &mut CTX, message: &[u8]) -> JwstCodecResult<()> {
+pub async fn handle_message<CTX: Context>(ctx: &mut CTX, message: &[u8]) -> JwstCodecResult<()> {
     let (tail, name) = read_var_string_inline(message)?;
 
     if ctx.get_document_name() != name {
@@ -42,7 +42,7 @@ pub fn handle_message<CTX: Context>(ctx: &mut CTX, message: &[u8]) -> JwstCodecR
             // server ignore, maybe custom impl it
         }
         MessageType::Close => {
-            ctx.close();
+            ctx.close().await;
         }
         MessageType::SyncStatus => {
             // server ignore
@@ -61,26 +61,26 @@ fn handle_sync_message<CTX: Context>(ctx: &mut CTX, message: &[u8]) -> JwstCodec
             let state_vector = read_sync_step1(tail)?;
 
             let doc = write_sync_step1(ctx.get_document())?;
-            ctx.unicast(&[message_header(ctx)?, doc].concat());
+            ctx.unicast([message_header(ctx)?, doc].concat());
 
             let update = write_sync_step2(ctx.get_document(), &state_vector)?;
-            ctx.unicast(&[message_header(ctx)?, update].concat());
+            ctx.unicast([message_header(ctx)?, update].concat());
         }
         DocMessage::Step2 => {
             let update = read_sync_step2(tail)?;
             let broadcast_update = write_sync_update(&update)?;
             ctx.get_document_mut().apply_update_from_binary(update)?;
 
-            ctx.broadcast(&[message_header(ctx)?, broadcast_update].concat());
-            ctx.unicast(&[message_header(ctx)?, write_sync_status(true)?].concat());
+            ctx.broadcast([message_header(ctx)?, broadcast_update].concat());
+            ctx.unicast([message_header(ctx)?, write_sync_status(true)?].concat());
         }
         DocMessage::Update => {
             let update = read_sync_update(tail)?;
             let broadcast_update = write_sync_update(&update)?;
             ctx.get_document_mut().apply_update_from_binary(update)?;
 
-            ctx.broadcast(&[message_header(ctx)?, broadcast_update].concat());
-            ctx.unicast(&[message_header(ctx)?, write_sync_status(true)?].concat());
+            ctx.broadcast([message_header(ctx)?, broadcast_update].concat());
+            ctx.unicast([message_header(ctx)?, write_sync_status(true)?].concat());
         }
     }
 
@@ -109,7 +109,7 @@ fn handle_awareness_message<CTX: Context>(ctx: &mut CTX, message: &[u8]) -> Jwst
         write_sync_message(&mut buffer, &SyncMessage::Awareness(states))
             .map_err(|err| JwstCodecError::InvalidWriteBuffer(err.to_string()))?;
 
-        ctx.broadcast(&[message_header(ctx)?, buffer].concat());
+        ctx.broadcast([message_header(ctx)?, buffer].concat());
     }
 
     Ok(())
@@ -125,7 +125,7 @@ pub fn handle_query_awareness<CTX: Context>(ctx: &CTX) -> JwstCodecResult<()> {
     write_sync_message(&mut buffer, &SyncMessage::Awareness(states))
         .map_err(|err| JwstCodecError::InvalidWriteBuffer(err.to_string()))?;
 
-    ctx.unicast(&[message_header(ctx)?, buffer].concat());
+    ctx.unicast([message_header(ctx)?, buffer].concat());
 
     Ok(())
 }

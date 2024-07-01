@@ -9,8 +9,8 @@ pub trait Context {
     fn get_awareness(&self) -> &Awareness;
     fn get_awareness_mut(&mut self) -> &mut Awareness;
 
-    fn unicast(&self, msg: &[u8]);
-    fn broadcast(&self, msg: &[u8]);
+    fn unicast(&self, msg: Vec<u8>);
+    fn broadcast(&self, msg: Vec<u8>);
 
-    fn close(&mut self);
+    async fn close(&mut self);
 }
