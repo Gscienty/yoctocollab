@@ -10,6 +10,7 @@ enum RoomMessage {
     Leave(u64),
 }
 
+#[derive(Clone)]
 pub struct RoomCommand {
     cmd: UnboundedSender<RoomMessage>,
 }
@@ -17,6 +18,23 @@ pub struct RoomCommand {
 impl RoomCommand {
     fn new(cmd: UnboundedSender<RoomMessage>) -> Self {
         Self { cmd }
+    }
+
+    pub(super) fn join(
+        &self,
+        connection_id: u64,
+        room_outgoing: UnboundedSender<Message>,
+    ) -> Result<(), ()> {
+        match self
+            .cmd
+            .send(RoomMessage::Join(connection_id, room_outgoing))
+        {
+            Ok(()) => Ok(()),
+            Err(err) => {
+                log::error!("join room failed, err: {err}");
+                return Err(());
+            }
+        }
     }
 }
 
