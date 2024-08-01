@@ -1,5 +1,5 @@
 use core::panic;
-use std::{cell::RefCell, collections::HashMap, sync::Arc};
+use std::{cell::RefCell, collections::HashMap, pin::Pin, sync::Arc};
 
 use tokio::{
     net::{TcpListener, TcpStream},
@@ -30,7 +30,7 @@ impl Server {
         let connection_id_generator = match Snowflake::new(machine_id) {
             Ok(connection_id_generator) => RefCell::new(connection_id_generator),
             Err(err) => {
-                panic!("cannot register connection id generator");
+                panic!("cannot register connection id generator, err: {err:?}");
             }
         };
 
@@ -40,7 +40,7 @@ impl Server {
         }
     }
 
-    pub async fn run(&'static self) {
+    pub async fn run(self: Pin<&'static Self>) {
         let listener = match TcpListener::bind("127.0.0.1:2976").await {
             Ok(listener) => listener,
             Err(err) => {
@@ -50,16 +50,11 @@ impl Server {
         };
 
         while let Ok((stream, _)) = listener.accept().await {
-            let rooms = self.rooms.clone();
-            tokio::spawn(self.handle_stream(rooms, stream));
+            tokio::spawn(self.handle_stream(stream));
         }
     }
 
-    async fn handle_stream(
-        &'static self,
-        rooms: Arc<RwLock<HashMap<String, RoomCommand>>>,
-        stream: TcpStream,
-    ) {
+    async fn handle_stream(self: Pin<&Self>, stream: TcpStream) {
         // TODO hardcode
         let room_name = "default";
 
@@ -90,7 +85,7 @@ impl Server {
 
         let (room_outgoing, room_incoming) = unbounded_channel::<Message>();
         let room_command = match self
-            .enter_room(connection_id, room_outgoing, rooms, room_name)
+            .enter_room(connection_id, room_outgoing, room_name)
             .await
         {
             Ok(room_command) => room_command,
@@ -107,17 +102,20 @@ impl Server {
             room_incoming,
             stream,
         );
-        connection::connection(conn, async {});
+        connection::connection(conn, async {
+            self.handle_conn().await;
+        });
     }
 
+    async fn handle_conn(self: Pin<&Self>) {}
+
     async fn enter_room(
-        &'static self,
+        self: Pin<&Self>,
         connection_id: u64,
         room_outgoing: UnboundedSender<Message>,
-        rooms: Arc<RwLock<HashMap<String, RoomCommand>>>,
         doc_name: &str,
     ) -> Result<RoomCommand, ()> {
-        if let Some(room_command) = rooms.read().await.get(doc_name) {
+        if let Some(room_command) = self.rooms.read().await.get(doc_name) {
             if let Err(err) = room_command.join(connection_id, room_outgoing) {
                 log::error!("cannot join room, err: {err:?}");
                 return Err(());
@@ -129,7 +127,7 @@ impl Server {
         // TODO read doc
         let doc = Doc::default();
 
-        let mut rooms = rooms.write().await;
+        let mut rooms = self.rooms.write().await;
         if !rooms.contains_key(doc_name) {
             // TODO doc
             let room_command = Room::create(doc_name.to_owned(), doc, |_doc| {
